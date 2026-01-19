@@ -1,6 +1,6 @@
 ## How to run Application
 
-1. clone the project: git clone 
+1. clone the project: git clone https://github.com/chiransiriwardhana/RAG-based-chatbot-Flash.git
 2. go to root directory: cd RAG_chatbot
 3. install dependencies: pip install \
   streamlit \
