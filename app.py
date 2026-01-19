@@ -2,8 +2,8 @@ import streamlit as st
 import io
 import hashlib
 import base64
-from modules.vectorstore_utils import load_vectorstore, retrieve_context
-from modules.llm_utils import answer_from_own_knowledge, answer_from_document, image_answer
+from utils.vectorstore_utils import load_vectorstore, retrieve_context
+from utils.llm_utils import answer_from_own_knowledge, answer_from_document, image_answer
 
 # =====================================================
 # Page config
