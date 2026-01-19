@@ -1,12 +1,9 @@
 import streamlit as st
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_ollama import OllamaEmbeddings, OllamaLLM
-from langchain_chroma import Chroma
-from PIL import Image
 import io
 import hashlib
 import base64
+from modules.vectorstore_utils import load_vectorstore, retrieve_context
+from modules.llm_utils import answer_from_own_knowledge, answer_from_document, image_answer
 
 # =====================================================
 # Page config
@@ -45,81 +42,15 @@ if st.sidebar.button("Clear chats"):
 # =====================================================
 # Vectorstore (RAG)
 # =====================================================
-@st.cache_resource
-def load_vectorstore(pdf_paths):
-    docs = []
-    for path in pdf_paths:
-        loader = PyPDFLoader(path)
-        docs.extend(loader.load())
-
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200
-    )
-    chunks = splitter.split_documents(docs)
-
-    embeddings = OllamaEmbeddings(model="llama3.2")
-
-    return Chroma.from_documents(
-        chunks,
-        embeddings,
-        persist_directory="chroma_db"
-    )
-
 PDF_FILES = [
     "globalwarming.pdf",
-    # "/Users/chiransiriwardena/Documents/Rag_chatbot/pdf/pop.pdf",
-    # "/Users/chiransiriwardena/Documents/Rag_chatbot/pdf/LiteracyRateOfPopulation-10YearsAndAbove-ByDistrictAndSex.pdf",
-    # "/Users/chiransiriwardena/Documents/Rag_chatbot/pdf/economy.pdf",
-    # "/Users/chiransiriwardena/Documents/Rag_chatbot/pdf/ocean.pdf"
+    # Add more PDF paths as needed
 ]
-
 vectorstore = load_vectorstore(PDF_FILES)
 
-def retrieve_context(query: str) -> str:
-    docs = vectorstore.similarity_search(query, k=3)
-    return "\n\n".join(d.page_content for d in docs) if docs else ""
-
 # =====================================================
-# LLM helpers
+# LLM helpers (imported)
 # =====================================================
-def answer_from_own_knowledge(question: str) -> str:
-    llm = OllamaLLM(model=text_model)
-    prompt = f"""
-Answer ONLY from your own knowledge.
-If unsure, reply EXACTLY:
-I DON'T KNOW
-
-Question:
-{question}
-
-Answer:
-"""
-    return llm.invoke(prompt).strip()
-
-def answer_from_document(question: str, context: str) -> str:
-    llm = OllamaLLM(model=text_model)
-    prompt = f"""
-You MUST answer ONLY using the context below.
-If the answer is not in the context, say EXACTLY:
-ANSWER NOT IN DOCUMENT
-
-Context:
-{context}
-
-Question:
-{question}
-
-Answer:
-"""
-    return llm.invoke(prompt).strip()
-
-def image_answer(image_file, question: str) -> str:
-    llm = OllamaLLM(model="llava")
-    img = Image.open(image_file)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return llm.invoke(question, images=[buf.getvalue()])
 
 # =====================================================
 # Header
@@ -166,7 +97,7 @@ elif mode == "Image Q&A":
 
         if st.session_state.last_image_hash != image_hash:
             st.session_state.image_threads.append({
-                "image_bytes": image_bytes,  # ✅ store bytes instead of UploadedFile
+                "image_bytes": image_bytes, 
                 "messages": []
             })
             st.session_state.last_image_hash = image_hash
@@ -205,32 +136,33 @@ if mode != "About":
             with st.chat_message("user"):
                 st.markdown(user_input)
 
+
             if answer_source == "Model knowledge only":
                 with st.spinner("Thinking..."):
-                    final_answer = answer_from_own_knowledge(user_input)
+                    final_answer = answer_from_own_knowledge(user_input, text_model)
 
             elif answer_source == "Documents only":
                 with st.spinner("Searching documents..."):
-                    context = retrieve_context(user_input)
+                    context = retrieve_context(vectorstore, user_input)
                 with st.spinner("Thinking..."):
                     final_answer = (
-                        answer_from_document(user_input, context)
+                        answer_from_document(user_input, context, text_model)
                         if context.strip()
                         else "ANSWER NOT IN DOCUMENT"
                     )
 
             else:  # Auto
                 with st.spinner("Thinking..."):
-                    own_answer = answer_from_own_knowledge(user_input)
+                    own_answer = answer_from_own_knowledge(user_input, text_model)
 
                 if own_answer != "I DON'T KNOW":
                     final_answer = own_answer
                 else:
                     with st.spinner("Searching documents..."):
-                        context = retrieve_context(user_input)
+                        context = retrieve_context(vectorstore, user_input)
                     with st.spinner("Thinking..."):
                         final_answer = (
-                            answer_from_document(user_input, context)
+                            answer_from_document(user_input, context, text_model)
                             if context.strip()
                             else "ANSWER NOT IN DOCUMENT"
                         )
